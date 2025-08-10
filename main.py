@@ -81,7 +81,7 @@ def main_loop():
 
     # Always keep these as paths
     agent1_path = "your_agent.py"
-    agent2_path = "your_agent.py"
+    agent2_path = "sample_agent.py"
 
     current_moves: List[Dict[str, Any]] = []
     record_replay = False
