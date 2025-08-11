@@ -12,7 +12,7 @@ import pygame
 from game import XOShiftGame
 from ui import XOShiftUI, REPLAYS_DIR
 
-AGENT_TIME_LIMIT = 3.0
+AGENT_TIME_LIMIT = 2.0
 MAX_TURNS = 250
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 850

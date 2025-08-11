@@ -1,5 +1,4 @@
 from typing import List, Optional, Tuple
-from copy import deepcopy
 from agent_utils import get_all_valid_moves
 from game import XOShiftGame
 
@@ -10,11 +9,11 @@ def agent_move(board: List[List[Optional[str]]], player_symbol: str) -> Tuple[in
 
     for move in valid_moves:
         new_board = simulate(board, move, player_symbol, size)
-        if check_winner(new_board) == player_symbol:
+        if quick_check_winner(new_board, move[2], move[3], player_symbol, size):
             return move
 
 
-    DEPTH = 8 - size
+    DEPTH = 4 if size==3 else 3
     score, best_move = minimax(board, player_symbol, DEPTH, float('-inf'), float('inf'), True, size)
     if best_move is None:
         return valid_moves[0] if valid_moves else (0, 0, 0, 0)
@@ -23,20 +22,28 @@ def agent_move(board: List[List[Optional[str]]], player_symbol: str) -> Tuple[in
 
 def simulate(board, move, symbol, size):
 
-    b = deepcopy(board)
+    b = [row.copy() for row in board]
     game = XOShiftGame(size = size)
     game.board = b
     (sr, sc, tr, tc) = move
     game.apply_move(sr, sc, tr, tc, symbol)
     return game.board
 
-def is_winning_move(board, move, symbol, size):
+def quick_check_winner(board, tr, tc, player_symbol, size):
 
-    b2 = simulate(board, move, symbol, size)
-    game = XOShiftGame(size = size)
-    game.board = b2
-    return game.check_winner() == symbol
+    if all(board[tr][x] == player_symbol for x in range(size)):
+        return True
 
+    elif all(board[x][tc] == player_symbol for x in range(size)):
+        return True
+
+    if tr == tc and all(board[x][x] == player_symbol for x in range(size)):
+        return True
+
+    if tr+tc == size-1 and all(board[x][size-1-x] == player_symbol for x in range(size)):
+        return True
+
+    return False
 
 def check_winner(board):
     size = len(board)
@@ -61,31 +68,6 @@ def check_winner(board):
 
     # no one has won yet
     return None
-
-def check_all_winners(board):
-    size = len(board)
-    winners = set()
-
-    # checking rows
-    for row in board:
-        if row[0] is not None and all(cell == row[0] for cell in row):
-            winners.add(row[0])
-
-    # checking columns
-    for col in range(size):
-        if board[0][col] is not None and all(board[row][col] == board[0][col] for row in range(size)):
-            winners.add(board[0][col])
-
-    # checking main diameter
-    if board[0][0] is not None and all(board[i][i] == board[0][0] for i in range(size)):
-        winners.add(board[0][0])
-
-    # checking minor diameter
-    if board[0][size - 1] is not None and all(board[i][size - 1 - i] == board[0][size - 1] for i in range(size)):
-        winners.add(board[0][size - 1])
-
-    return list(winners)
-
 
 def heuristic(board, player_symbol):
     opp = 'O' if player_symbol == 'X' else 'X'
@@ -192,12 +174,10 @@ def apply_shift_to_line(
     return new_line
 
 
-
 #--------------------------------------------------------------------
 
-# adding check winner to heuristic
-# add check all winner for draw
-# add quick sorting for pruning in 5*5
-# check moves that cause opponent win
-
+#changing heuristic
+#adding check winner to heuristic
+#add check all winner for draw
+#add quick sorting for pruning in 5*5
 
