@@ -1,17 +1,22 @@
 from typing import List, Optional, Tuple
 from copy import deepcopy
-import random
 from agent_utils import get_all_valid_moves
 from game import XOShiftGame
 
 def agent_move(board: List[List[Optional[str]]], player_symbol: str) -> Tuple[int, int, int, int]:
 
-
     size = len(board)
-    DEPTH = 3 if size==3 else 4
+    valid_moves = get_all_valid_moves(board, player_symbol)
+
+    for move in valid_moves:
+        new_board = simulate(board, move, player_symbol, size)
+        if check_winner(new_board) == player_symbol:
+            return move
+
+
+    DEPTH = 8 - size
     score, best_move = minimax(board, player_symbol, DEPTH, float('-inf'), float('inf'), True, size)
     if best_move is None:
-        valid_moves = get_all_valid_moves(board, player_symbol)
         return valid_moves[0] if valid_moves else (0, 0, 0, 0)
     return best_move
 
@@ -36,50 +41,46 @@ def is_winning_move(board, move, symbol, size):
 def check_winner(board):
     size = len(board)
 
-    # بررسی سطرها
+    # checking rows
     for row in board:
         if row[0] is not None and all(cell == row[0] for cell in row):
             return row[0]
 
-    # بررسی ستون‌ها
+    # checking columns
     for col in range(size):
         if board[0][col] is not None and all(board[row][col] == board[0][col] for row in range(size)):
             return board[0][col]
 
-    # بررسی قطر اصلی
+    # checking main diameter
     if board[0][0] is not None and all(board[i][i] == board[0][0] for i in range(size)):
         return board[0][0]
 
-    # بررسی قطر فرعی
+    # checking minor diameter
     if board[0][size-1] is not None and all(board[i][size-1-i] == board[0][size-1] for i in range(size)):
         return board[0][size-1]
 
-    # برنده‌ای وجود ندارد
+    # no one has won yet
     return None
 
 def check_all_winners(board):
-    """
-    برمی‌گرداند لیستی از همه بازیکن‌هایی که حداقل یک خط کامل دارند.
-    اگر لیست خالی باشد یعنی هیچ کس برنده نیست.
-    """
     size = len(board)
     winners = set()
 
-    # بررسی سطرها
+    # checking rows
     for row in board:
         if row[0] is not None and all(cell == row[0] for cell in row):
             winners.add(row[0])
 
-    # بررسی ستون‌ها
+    # checking columns
     for col in range(size):
         if board[0][col] is not None and all(board[row][col] == board[0][col] for row in range(size)):
             winners.add(board[0][col])
 
-    # بررسی قطر اصلی
+    # checking main diameter
     if board[0][0] is not None and all(board[i][i] == board[0][0] for i in range(size)):
         winners.add(board[0][0])
 
-    # بررسی قطر فرعی
+    # checking minor diameter
     if board[0][size - 1] is not None and all(board[i][size - 1 - i] == board[0][size - 1] for i in range(size)):
         winners.add(board[0][size - 1])
 
@@ -114,7 +115,7 @@ def minimax(
     alpha: float,
     beta: float,
     maximizing_player: bool,
-    size: int
+    size: int,
 ) -> Tuple[float, Optional[Tuple[int, int, int, int]]]:
 
     winner = check_winner(board)
@@ -122,48 +123,81 @@ def minimax(
         return float('inf'), None
     elif winner is not None:
         return float('-inf'), None
-
     if depth == 0:
         return heuristic(board, player_symbol), None
 
+
+    current_symbol = player_symbol if maximizing_player else opponent(player_symbol)
+    moves = get_all_valid_moves(board, current_symbol)
+    if not moves:
+        return heuristic(board, player_symbol), None
+
+    # ---------- MOVE ORDERING ----------
+    moves_boards_scores = []  # tuples: (move, maybe_new_board_or_None, score_for_ordering)
+
+    # For each move: simulate once, compute full heuristic(new_board) and store new_board for reuse.
+    for mv in moves:
+        new_b = simulate(board, mv, current_symbol, size)
+        score = heuristic(new_b, player_symbol)
+        moves_boards_scores.append((mv, new_b, score))
+
+    # sort: maximizing -> descending, minimizing -> ascending
+    moves_boards_scores.sort(key=lambda x: x[2], reverse=maximizing_player)
+
+    # ---------- main minimax loop (uses possibly precomputed new_board) ----------
     if maximizing_player:
         best_score = float('-inf')
         best_move = None
-        moves = get_all_valid_moves(board, player_symbol)
-
-        # Optional: مرتب‌سازی حرکات (move ordering) براساس یک ارزیابی سریع
-        # moves.sort(key=lambda mv: quick_eval_after_move(board, mv, player_symbol, size), reverse=True)
-
-        for move in moves:
-            new_board = simulate(board, move, player_symbol, size)
-            score, _ = minimax(new_board, player_symbol, depth - 1, alpha, beta, False, size)
+        for mv, new_b, _ in moves_boards_scores:
+            score, _ = minimax(new_b, player_symbol, depth - 1, alpha, beta, False, size)
             if score > best_score:
                 best_score = score
-                best_move = move
+                best_move = mv
             alpha = max(alpha, best_score)
             if alpha >= beta:
-                break  # β-cutoff (prune)
+                break
         return best_score, best_move
-
     else:
-        opp = 'O' if player_symbol is 'X' else 'X'
         best_score = float('inf')
         best_move = None
-        moves = get_all_valid_moves(board, opp)
-
-        # Optional: مرتب‌سازی حرکات برای حریف (کم‌ترین امتیاز اول)
-        # moves.sort(key=lambda mv: quick_eval_after_move(board, mv, opp, size))
-
-        for move in moves:
-            new_board = simulate(board, move, opp, size)
-            score, _ = minimax(new_board, player_symbol, depth - 1, alpha, beta, True, size)
+        for mv, new_b, _ in moves_boards_scores:
+            score, _ = minimax(new_b, player_symbol, depth - 1, alpha, beta, True, size)
             if score < best_score:
                 best_score = score
-                best_move = move
+                best_move = mv
             beta = min(beta, best_score)
             if beta <= alpha:
-                break  # α-cutoff (prune)
-        # 18
+                break
         return best_score, best_move
 
-    #اضافه کردن check win  به هیوریستیک
+def opponent(player_symbol: str) -> str:
+    return 'O' if player_symbol == 'X' else 'X'
+
+def apply_shift_to_line(
+    line: List[Optional[str]],
+    src_idx: int,
+    tgt_idx: int,
+    player_symbol: str
+)-> List[Optional[str]]:
+
+    new_line = list(line)
+    if src_idx < tgt_idx:
+        for i in range(src_idx, tgt_idx):
+             new_line[i] = line[i + 1]
+        new_line[tgt_idx] = player_symbol
+    else:
+         for i in range(src_idx, tgt_idx, -1):
+            new_line[i] = line[i - 1]
+         new_line[tgt_idx] = player_symbol
+    return new_line
+
+
+
+#--------------------------------------------------------------------
+
+# adding check winner to heuristic
+# add check all winner for draw
+# add quick sorting for pruning in 5*5
+# check moves that cause opponent win
+
+

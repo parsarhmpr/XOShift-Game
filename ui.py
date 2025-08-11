@@ -31,8 +31,8 @@ class XOShiftUI:
     MENU_HIGHLIGHT_COLOR = (0, 120, 220)
     MENU_BUTTON_TEXT_COLOR = (255, 255, 255)
 
-    ITEM_HEIGHT = 40
-    ITEM_WIDTH_NORMAL = 220
+    ITEM_HEIGHT = 60
+    ITEM_WIDTH_NORMAL = 240
     ITEM_WIDTH_SMALL = 100
 
     def __init__(self, screen: pygame.Surface):
@@ -77,9 +77,9 @@ class XOShiftUI:
         self.replay_again_button_rect = pygame.Rect(self.screen_width // 2 - 150, self.screen_height - 160, 300, 50)
 
     def _setup_menu_rects(self):
-        y_offset = 130
-        spacing = self.ITEM_HEIGHT + 10
-        group_spacing = 25
+        y_offset = 150
+        spacing = self.ITEM_HEIGHT + 20
+        group_spacing = 30
 
         self.menu_options = {
             "title": "XOShift Game",
