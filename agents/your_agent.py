@@ -90,6 +90,7 @@ def heuristic(board, player_symbol):
             score -= 12
     return score
 
+
 def minimax(
     board: List[List[Optional[str]]],
     player_symbol: str,
