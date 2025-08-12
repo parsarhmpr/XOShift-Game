@@ -1,6 +1,5 @@
 from typing import List, Optional, Tuple
 from agent_utils import get_all_valid_moves
-from game import XOShiftGame
 
 def agent_move(board: List[List[Optional[str]]], player_symbol: str) -> Tuple[int, int, int, int]:
 
@@ -8,26 +7,40 @@ def agent_move(board: List[List[Optional[str]]], player_symbol: str) -> Tuple[in
     valid_moves = get_all_valid_moves(board, player_symbol)
 
     for move in valid_moves:
-        new_board = simulate(board, move, player_symbol, size)
+        new_board = simulate(board, move, player_symbol)
         if quick_check_winner(new_board, move[2], move[3], player_symbol, size):
             return move
 
 
-    DEPTH = 4 if size==3 else 3
+    DEPTH = 6 if size==3 else 4
     score, best_move = minimax(board, player_symbol, DEPTH, float('-inf'), float('inf'), True, size)
     if best_move is None:
         return valid_moves[0] if valid_moves else (0, 0, 0, 0)
     return best_move
 
 
-def simulate(board, move, symbol, size):
+def simulate(board, move, symbol):
 
     b = [row.copy() for row in board]
-    game = XOShiftGame(size = size)
-    game.board = b
     (sr, sc, tr, tc) = move
-    game.apply_move(sr, sc, tr, tc, symbol)
-    return game.board
+
+    if sr == tr:
+        if tc < sc:
+            for col_idx in range(sc, tc, -1):
+                b[sr][col_idx] = b[sr][col_idx - 1]
+        else:
+            for col_idx in range(sc, tc):
+                b[sr][col_idx] = b[sr][col_idx + 1]
+    else:
+        if tr < sr:
+            for row_idx in range(sr, tr, -1):
+                b[row_idx][sc] = b[row_idx - 1][sc]
+        else:
+            for row_idx in range(sr, tr):
+                b[row_idx][sc] = b[row_idx + 1][sc]
+
+    b[tr][tc] = symbol
+    return b
 
 def quick_check_winner(board, tr, tc, player_symbol, size):
 
@@ -70,24 +83,87 @@ def check_winner(board):
     return None
 
 def heuristic(board, player_symbol):
+
+    MAX_SCORE = 1000
     opp = 'O' if player_symbol == 'X' else 'X'
     size = len(board)
     score = 0
+    x = size - 1
 
-    lines = []
+    # Scoring rows
+    player_num = 0
+    opp_num = 0
+    for row in board:
+        for i in range(size):
+            if row[i] == player_symbol:
+                player_num += 1
+            elif row[i] == opp:
+                opp_num += 1
 
+        if x == player_num:
+            score += 5
+        elif x == opp_num:
+            score -= 5
+        elif size == player_num:
+            return MAX_SCORE
+        elif size == opp_num:
+            return -MAX_SCORE
+
+    # Scoring columns
+    player_num = 0
+    opp_num = 0
+    for col in range(size):
+        for row in range(size):
+            if board[row][col] == player_symbol:
+                player_num += 1
+            elif board[row][col] == opp:
+                opp_num += 1
+
+        if x == player_num:
+            score += 5
+        elif x == opp_num:
+            score -= 5
+        elif size == player_num:
+            return MAX_SCORE
+        elif size == opp_num:
+            return -MAX_SCORE
+
+    # Scoring the main-diameter
+    player_num = 0
+    opp_num = 0
     for i in range(size):
-        lines.append([board[i][j] for j in range(size)])  # Row
-        lines.append([board[j][i] for j in range(size)])  # Column
+        if board[i][i] == player_symbol:
+            player_num += 1
+        elif board[i][i] == opp:
+            opp_num += 1
 
-    lines.append([board[i][i] for i in range(size)])             # Main diagonal
-    lines.append([board[i][size - 1 - i] for i in range(size)])  # Anti-diagonal
+    if x == player_num:
+        score += 5
+    elif x == opp_num:
+        score -= 5
+    elif size == player_num:
+        return MAX_SCORE
+    elif size == opp_num:
+        return -MAX_SCORE
 
-    for line in lines:
-        if line.count(player_symbol) == size-1 and line.count(None) == 1:
-            score += 10
-        if line.count(opp) == size-1 and line.count(None) == 1:
-            score -= 12
+    # Scoring the sub-diameter
+    player_num = 0
+    opp_num = 0
+    for i in range(size):
+        if board[i][x - i] == player_symbol:
+            player_num += 1
+        elif board[i][x - i] == opp:
+            opp_num += 1
+
+    if x == player_num:
+        score += 5
+    elif x == opp_num:
+        score -= 5
+    elif size == player_num:
+        return MAX_SCORE
+    elif size == opp_num:
+        return -MAX_SCORE
+
     return score
 
 
@@ -115,19 +191,18 @@ def minimax(
     if not moves:
         return heuristic(board, player_symbol), None
 
-    # ---------- MOVE ORDERING ----------
-    moves_boards_scores = []  # tuples: (move, maybe_new_board_or_None, score_for_ordering)
-
-    # For each move: simulate once, compute full heuristic(new_board) and store new_board for reuse.
+    # MOVE ORDERING
+    moves_boards_scores = []
     for mv in moves:
-        new_b = simulate(board, mv, current_symbol, size)
+        new_b = simulate(board, mv, current_symbol)
         score = heuristic(new_b, player_symbol)
         moves_boards_scores.append((mv, new_b, score))
 
-    # sort: maximizing -> descending, minimizing -> ascending
+    # sort: maximizing -> descending
+    # minimizing -> ascending
     moves_boards_scores.sort(key=lambda x: x[2], reverse=maximizing_player)
 
-    # ---------- main minimax loop (uses possibly precomputed new_board) ----------
+    # main minimax
     if maximizing_player:
         best_score = float('-inf')
         best_move = None
@@ -155,30 +230,3 @@ def minimax(
 
 def opponent(player_symbol: str) -> str:
     return 'O' if player_symbol == 'X' else 'X'
-
-def apply_shift_to_line(
-    line: List[Optional[str]],
-    src_idx: int,
-    tgt_idx: int,
-    player_symbol: str
-)-> List[Optional[str]]:
-
-    new_line = list(line)
-    if src_idx < tgt_idx:
-        for i in range(src_idx, tgt_idx):
-             new_line[i] = line[i + 1]
-        new_line[tgt_idx] = player_symbol
-    else:
-         for i in range(src_idx, tgt_idx, -1):
-            new_line[i] = line[i - 1]
-         new_line[tgt_idx] = player_symbol
-    return new_line
-
-
-#--------------------------------------------------------------------
-
-#changing heuristic
-#adding check winner to heuristic
-#add check all winner for draw
-#add quick sorting for pruning in 5*5
-
