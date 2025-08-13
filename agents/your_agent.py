@@ -1,22 +1,84 @@
 from typing import List, Optional, Tuple
 from agent_utils import get_all_valid_moves
+import time
+
+# Timing configuration
+class SearchTimeout(Exception):
+    pass
+
+class TimeBudget:
+    def __init__(self, time_limit: float, safety_margin: float):
+        start = time.monotonic()
+        self.deadline = start + float(time_limit) - float(safety_margin)
+
+    def check(self) -> None:
+        if time.monotonic() >= self.deadline:
+            raise SearchTimeout()
+
+class RootBest:
+    def __init__(self, initial_move: Optional[Tuple[int, int, int, int]] = None):
+        self.best_move: Optional[Tuple[int, int, int, int]] = initial_move
+        self.best_score: float = float("-inf")
+
+    def update_if_better(self, score: float, move: Tuple[int, int, int, int]) -> None:
+        if score > self.best_score:
+            self.best_score = score
+            self.best_move = move
+
 
 def agent_move(board: List[List[Optional[str]]], player_symbol: str) -> Tuple[int, int, int, int]:
 
-    size = len(board)
-    valid_moves = get_all_valid_moves(board, player_symbol)
 
+    TIME_LIMIT: float = 2.0
+    SAFETY_MARGIN: float = 0.2
+
+    size = len(board)
+
+    # Start the time budget
+    budget = TimeBudget(time_limit=TIME_LIMIT, safety_margin=SAFETY_MARGIN)
+
+    valid_moves = get_all_valid_moves(board, player_symbol)
+    if not valid_moves:
+        return 0, 0, 0, 0
+
+    # Fast win
     for move in valid_moves:
+        budget.check()  # Check before simulating
         new_board = simulate(board, move, player_symbol)
         if quick_check_winner(new_board, move[2], move[3], player_symbol, size):
             return move
 
+    if size == 3:
+        DEPTH = 6
+    elif size==4:
+        DEPTH = 4
+    else:
+        DEPTH = 3
 
-    DEPTH = 6 if size==3 else 4
-    score, best_move = minimax(board, player_symbol, DEPTH, float('-inf'), float('inf'), True, size)
-    if best_move is None:
-        return valid_moves[0] if valid_moves else (0, 0, 0, 0)
-    return best_move
+    # Root fallback
+    root_state = RootBest(initial_move=valid_moves[0])
+
+    try:
+        score, best_move = minimax(
+            board=board,
+            player_symbol=player_symbol,
+            depth=DEPTH,
+            alpha=float("-inf"),
+            beta=float("+inf"),
+            maximizing_player=True,
+            size=size,
+            budget=budget,
+            root_state=root_state,
+            is_root=True,
+        )
+        if best_move is not None:
+            return best_move
+    except SearchTimeout:
+        # Time is up
+        pass
+
+    return root_state.best_move if root_state.best_move is not None else valid_moves[0]
+
 
 
 def simulate(board, move, symbol):
@@ -166,6 +228,9 @@ def heuristic(board, player_symbol):
 
     return score
 
+def opponent(player_symbol: str) -> str:
+    return 'O' if player_symbol == 'X' else 'X'
+
 
 def minimax(
     board: List[List[Optional[str]]],
@@ -175,13 +240,20 @@ def minimax(
     beta: float,
     maximizing_player: bool,
     size: int,
+    budget: Optional[TimeBudget] = None,
+    root_state: Optional[RootBest] = None,
+    is_root: bool = False,
 ) -> Tuple[float, Optional[Tuple[int, int, int, int]]]:
+
+    # Time check at node entry
+    if budget is not None:
+        budget.check()
 
     winner = check_winner(board)
     if winner == player_symbol:
-        return float('inf'), None
-    elif winner is not None:
-        return float('-inf'), None
+        return float("+inf"), None
+    elif winner is not None and winner != player_symbol:
+        return float("-inf"), None
     if depth == 0:
         return heuristic(board, player_symbol), None
 
@@ -192,41 +264,56 @@ def minimax(
         return heuristic(board, player_symbol), None
 
     # MOVE ORDERING
-    moves_boards_scores = []
+    moves_boards_scores: List[Tuple[Tuple[int, int, int, int], List[List[Optional[str]]], float]] = []
     for mv in moves:
-        new_b = simulate(board, mv, current_symbol)
-        score = heuristic(new_b, player_symbol)
-        moves_boards_scores.append((mv, new_b, score))
+        child_board = simulate(board, mv, current_symbol)
+        score_for_order = heuristic(child_board, player_symbol)
+        moves_boards_scores.append((mv, child_board, score_for_order))
 
-    # sort: maximizing -> descending
-    # minimizing -> ascending
     moves_boards_scores.sort(key=lambda x: x[2], reverse=maximizing_player)
 
-    # main minimax
+    # Main minimax loop
+    best_move_local: Optional[Tuple[int, int, int, int]] = None
+
     if maximizing_player:
-        best_score = float('-inf')
-        best_move = None
-        for mv, new_b, _ in moves_boards_scores:
-            score, _ = minimax(new_b, player_symbol, depth - 1, alpha, beta, False, size)
-            if score > best_score:
-                best_score = score
-                best_move = mv
-            alpha = max(alpha, best_score)
-            if alpha >= beta:
-                break
-        return best_score, best_move
-    else:
-        best_score = float('inf')
-        best_move = None
-        for mv, new_b, _ in moves_boards_scores:
-            score, _ = minimax(new_b, player_symbol, depth - 1, alpha, beta, True, size)
-            if score < best_score:
-                best_score = score
-                best_move = mv
-            beta = min(beta, best_score)
+        value = float("-inf")
+        for mv, child_board, _ in moves_boards_scores:
+            if budget is not None:
+                budget.check()
+
+            child_score, _ = minimax(
+                child_board, player_symbol, depth - 1,
+                alpha, beta, False, size,
+                budget=budget, root_state=root_state, is_root=False
+            )
+
+            if child_score > value:
+                value = child_score
+                best_move_local = mv
+                if is_root and root_state is not None:
+                    root_state.update_if_better(child_score, mv)
+
+            alpha = max(alpha, value)
             if beta <= alpha:
                 break
-        return best_score, best_move
+        return value, best_move_local
 
-def opponent(player_symbol: str) -> str:
-    return 'O' if player_symbol == 'X' else 'X'
+    else:
+        value = float("+inf")
+        for mv, child_board, _ in moves_boards_scores:
+            if budget is not None:
+                budget.check()
+
+            child_score, _ = minimax(
+                child_board, player_symbol, depth - 1,
+                alpha, beta, True, size,
+                budget=budget, root_state=root_state, is_root=False
+            )
+
+            if child_score < value:
+                value = child_score
+                best_move_local = mv
+            beta = min(beta, value)
+            if beta <= alpha:
+                break
+        return value, best_move_local
